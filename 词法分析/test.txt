@@ -11,7 +11,7 @@ int main() {
     float invalid2 = .;         // 只有小数点
     float valid = 123.;         // 以小数点结尾
 
-    if (a > 100) {
+    if (a >>> 100) {
         printf("Large number: %d\n", a);
     }
 

@@ -231,29 +231,23 @@ Token get_next_token(){
 
     // 数字
     if (isdigit(source_code[position]) ||
-        (source_code[position] == '.' && isdigit(source_code[position+1]))){
+        (source_code[position] == '.' && isdigit(source_code[position+1]))) {
         char number[100] = "";
         int i = 0;
-        int dot_count = 0;
 
-        while (isdigit(source_code[position]) || source_code[position] == '.'){
-            if (source_code[position] == '.'){
-                dot_count++;
-                if (dot_count > 1){
-                    break;
-                }
-            }
-
+        // 扫描完整连续数字/小数点序列
+        while (isdigit(source_code[position]) || source_code[position] == '.') {
             number[i++] = source_code[position++];
             column++;
+            if (i >= sizeof(number)-1) break; // 防止溢出
         }
-
         number[i] = '\0';
 
-        if (is_valid_number(number)){
+        // 检查是否合法数字
+        if (is_valid_number(number)) {
             token.type = NUMBER;
-        } else{
-            token.type = UNKNOWN;
+        } else {
+            token.type = UNKNOWN; // 非法数字
         }
         strcpy(token.value, number);
         return token;
@@ -342,48 +336,27 @@ Token get_next_token(){
     // 运算符和分隔符
     char symbol[10] = "";
     int i = 0;
+    int start_pos = position;
 
-    // 尝试匹配最长运算符
     while (source_code[position] != '\0' && !isspace(source_code[position]) &&
            !isalnum(source_code[position]) && source_code[position] != '_' &&
-           source_code[position] != '"' && source_code[position] != '\''){
+           source_code[position] != '"' && source_code[position] != '\'') {
 
+        if (i >= sizeof(symbol) - 1) break;
         symbol[i++] = source_code[position++];
         column++;
         symbol[i] = '\0';
-
-        // 尝试向前看是否又更长的运算符
-        char next_symbol[10];
-        strcpy(next_symbol, symbol);
-        next_symbol[i] = source_code[position];
-        next_symbol[i+1] = '\0';
-
-        // 如果下一个字符拼起来仍然是运算符，则继续循环
-        if (is_operator(next_symbol)){
-            continue;
-        }
-
-        // 否则检测当前symbol是否为运算符
-        if (is_operator(symbol)){
-            token.type = OPERATOR;
-            strcpy(token.value, symbol);
-            return token;
-        }
-
-        // 如果只是一个分隔符
-        if (i == 1 && is_delimiter(symbol[0])){
-            token.type = DELIMITER;
-            strcpy(token.value, symbol);
-            return token;
-        }
-        break;
     }
 
-    // 未知字符
-    if (i > 0){
-        token.type = UNKNOWN;
-        strcpy(token.value, symbol);
+// 整体判断
+    if (is_operator(symbol)) {
+        token.type = OPERATOR;
+    } else if (i == 1 && is_delimiter(symbol[0])) {
+        token.type = DELIMITER;
+    } else {
+        token.type = UNKNOWN; // 非法运算符
     }
+    strcpy(token.value, symbol);
     return token;
 }
 
