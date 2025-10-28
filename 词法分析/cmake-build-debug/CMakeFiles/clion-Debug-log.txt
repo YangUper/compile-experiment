@@ -1,0 +1,6 @@
+C:\Users\yang\AppData\Local\JetBrains\CLion2024.1\cygwin_cmake\bin\cmake.exe -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_MAKE_PROGRAM=/cygdrive/e/jetbrain/CLion 2024.1.6/bin/ninja/cygwin/x64/ninja.exe" -G Ninja -S /cygdrive/e/learn/编译原理/词法分析 -B /cygdrive/e/learn/编译原理/词法分析/cmake-build-debug
+CMake Error at CMakeLists.txt:2 (project):
+  project PROJECT called with incorrect number of arguments
+
+
+-- Configuring incomplete, errors occurred!
