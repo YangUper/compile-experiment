@@ -9,9 +9,10 @@ int main() {
     // 测试用例
     int invalid1 = 123.45.67;  // 多个小数点
     float invalid2 = .;         // 只有小数点
-    float valid = 123.;         // 以小数点结尾
+    float valid = 00000;         // 以小数点结尾
+    float xx = .5;
 
-    if (a >>> 100) {
+    if (a == 100) {
         printf("Large number: %d\n", a);
     }
 
