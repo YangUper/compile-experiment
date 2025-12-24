@@ -3,7 +3,7 @@ from typing import List, Set
 
 
 # ==========================================
-# 1. 词法分析（DFA）
+# 1. 词法分析（DFA）- 已修复减法死循环
 # ==========================================
 
 @dataclass
@@ -13,7 +13,6 @@ class Token:
     line: int
 
     def __repr__(self):
-        # 格式化输出，方便对齐查看
         return f"<{self.type:10}, {self.value:10}, Line: {self.line}>"
 
 
@@ -28,10 +27,10 @@ def char_type(ch):
 DFA = {
     0: {
         'LETTER': 1, 'DIGIT': 2,
-        '+': 3, '=': 5, '<': 6, '>': 6, '!': 6,
+        '+': 3, '-': 'MINUS', '*': 'MUL', '/': 'DIV',  # 修复：直接定义减乘除为终结态
+        '=': 5, '<': 6, '>': 6, '!': 6,
         ';': 'SEMI', '(': 'LPAREN', ')': 'RPAREN',
         '{': 'LBRACE', '}': 'RBRACE',
-        '*': 'MUL', '/': 'DIV',
         'SPACE': 0
     },
     1: {'LETTER': 1, 'DIGIT': 1},  # ID
@@ -56,28 +55,29 @@ class DFALexer:
 
     def tokenize(self):
         while self.pos < len(self.code):
+            # 跳过空白符
             while self.pos < len(self.code) and self.code[self.pos].isspace():
-                if self.code[self.pos] == '\n':
-                    self.line += 1
+                if self.code[self.pos] == '\n': self.line += 1
                 self.pos += 1
-            if self.pos >= len(self.code):
-                break
+            if self.pos >= len(self.code): break
 
             state = 0
             lexeme = ''
-            start = self.pos
 
             while self.pos < len(self.code):
                 ch = self.code[self.pos]
                 ctype = char_type(ch)
+
                 if state not in DFA or ctype not in DFA[state]:
                     break
+
                 nxt = DFA[state][ctype]
 
+                # 处理单字符终结符（如减号、乘号）
                 if isinstance(nxt, str):
                     self.tokens.append(Token(nxt, ch, self.line))
                     self.pos += 1
-                    state = -1
+                    state = -1  # 标记已处理
                     break
 
                 state = nxt
@@ -85,6 +85,8 @@ class DFALexer:
                 self.pos += 1
 
             if state == -1: continue
+
+            # 处理多字符 Token
             if state == 1:
                 self.tokens.append(Token(self.KEYWORDS.get(lexeme, 'ID'), lexeme, self.line))
             elif state == 2:
@@ -92,13 +94,15 @@ class DFALexer:
             elif state == 8:
                 self.tokens.append(Token('FLOAT_NUM', lexeme, self.line))
             elif state in [3, 4]:
-                self.tokens.append(Token('++' if state == 4 else '+', lexeme if lexeme else '+', self.line))
+                self.tokens.append(Token('++' if state == 4 else '+', lexeme, self.line))
             elif state == 5:
                 self.tokens.append(Token('=', '=', self.line))
             elif state == 6:
                 self.tokens.append(Token('relop', lexeme, self.line))
-            elif state == 99:
-                self.tokens.append(Token('ERROR', lexeme, self.line))
+            else:
+                # 错误处理：防止非法字符导致死循环
+                if self.pos < len(self.code):
+                    self.pos += 1
 
         self.tokens.append(Token('#', '#', self.line))
         return self.tokens
@@ -127,9 +131,8 @@ class TACGenerator:
 
 
 # ==========================================
-# 3. 语法分析（LL(1) + 语义检查）
+# 3. 语法分析（LL(1) + 四则运算）
 # ==========================================
-
 
 class LL1Parser:
     def __init__(self, tokens):
@@ -138,7 +141,7 @@ class LL1Parser:
         self.stack = ['#', 'Program']
         self.data_stack = []
         self.tac = TACGenerator()
-        self.sym_table: Set[str] = set()  # 存储变量名，用于重定义检查
+        self.sym_table: Set[str] = set()
         self.for_labels = []
         self.last_lexeme = ""
         self.nonterminals = {
@@ -157,35 +160,32 @@ class LL1Parser:
     def build_table(self):
         T = {}
 
-        def add(A, a, prod): T[(A, a)] = prod
+        def add(A, a, prod):
+            T[(A, a)] = prod
 
-        add('Program', 'INT', ['StmtList'])
-        add('Program', 'ID', ['StmtList'])
-        add('Program', 'FOR', ['StmtList'])
+        # 核心文法定义
+        add('Program', 'INT', ['StmtList']);
+        add('Program', 'ID', ['StmtList']);
+        add('Program', 'FOR', ['StmtList']);
         add('Program', '#', [])
-
-        add('StmtList', 'INT', ['Stmt', 'StmtList'])
-        add('StmtList', 'ID', ['Stmt', 'StmtList'])
-        add('StmtList', 'FOR', ['Stmt', 'StmtList'])
-        add('StmtList', 'RBRACE', [])
+        add('StmtList', 'INT', ['Stmt', 'StmtList']);
+        add('StmtList', 'ID', ['Stmt', 'StmtList']);
+        add('StmtList', 'FOR', ['Stmt', 'StmtList']);
+        add('StmtList', 'RBRACE', []);
         add('StmtList', '#', [])
-
-        add('Stmt', 'INT', ['DeclStmt'])
-        add('Stmt', 'ID', ['AssignStmt'])
+        add('Stmt', 'INT', ['DeclStmt']);
+        add('Stmt', 'ID', ['AssignStmt']);
         add('Stmt', 'FOR', ['ForStmt'])
 
-        # 声明: int a = expr;
         add('DeclStmt', 'INT', ['INT', 'ID', '@DEF_VAR', 'DeclSuffix'])
         add('DeclSuffix', 'SEMI', ['SEMI'])
         add('DeclSuffix', '=', ['=', 'Expr', '@ASSIGN', 'SEMI'])
 
-        # 赋值: ID = Expr;
         add('AssignStmt', 'ID', ['ID', '@CHECK_VAR', '@PUSH_VAL', '=', 'Expr', '@ASSIGN', 'SEMI'])
 
-        # For 循环逻辑动作
         add('ForStmt', 'FOR',
-            ['FOR', 'LPAREN', 'Init', 'SEMI', '@FOR_L1', 'Cond', '@FOR_IF', 'SEMI', '@ITER_MARK', 'Iter', '@ITER_SAVE',
-             'RPAREN', 'Block', '@FOR_GOTO_L1'])
+            ['FOR', 'LPAREN', 'Init', 'SEMI', '@FOR_L1', 'Cond', '@FOR_IF', 'SEMI', 'Iter', 'RPAREN', 'Block',
+             '@FOR_GOTO_L1'])
 
         add('Init', 'INT', ['INT', 'ID', '@DEF_VAR', '=', 'Expr', '@ASSIGN'])
         add('Init', 'ID', ['ID', '@CHECK_VAR', '@PUSH_VAL', '=', 'Expr', '@ASSIGN'])
@@ -200,26 +200,20 @@ class LL1Parser:
 
         add('Block', 'LBRACE', ['LBRACE', 'StmtList', 'RBRACE'])
 
-        # 表达式
-        add('Expr', 'ID', ['Term', "Expr'"])
-        add('Expr', 'NUM', ['Term', "Expr'"])
+        # --- 四则运算文法支持 ---
+        add('Expr', 'ID', ['Term', "Expr'"]);
+        add('Expr', 'NUM', ['Term', "Expr'"]);
         add('Expr', 'LPAREN', ['Term', "Expr'"])
         add("Expr'", '+', ['+', 'Term', '@ADD', "Expr'"])
-        add("Expr'", '-', ['-', 'Term', '@SUB', "Expr'"])
-        add("Expr'", 'SEMI', [])
-        add("Expr'", 'RPAREN', [])
-        add("Expr'", 'relop', [])
+        add("Expr'", 'MINUS', ['MINUS', 'Term', '@SUB', "Expr'"])  # 减法
+        for t in ['SEMI', 'RPAREN', 'relop']: add("Expr'", t, [])
 
-        add('Term', 'ID', ['Factor', "Term'"])
-        add('Term', 'NUM', ['Factor', "Term'"])
+        add('Term', 'ID', ['Factor', "Term'"]);
+        add('Term', 'NUM', ['Factor', "Term'"]);
         add('Term', 'LPAREN', ['Factor', "Term'"])
-        add("Term'", 'MUL', ['MUL', 'Factor', '@MUL', "Term'"])
-        add("Term'", 'DIV', ['DIV', 'Factor', '@DIV', "Term'"])
-        add("Term'", '+', [])
-        add("Term'", '-', [])
-        add("Term'", 'SEMI', [])
-        add("Term'", 'RPAREN', [])
-        add("Term'", 'relop', [])
+        add("Term'", 'MUL', ['MUL', 'Factor', '@MUL', "Term'"])  # 乘法
+        add("Term'", 'DIV', ['DIV', 'Factor', '@DIV', "Term'"])  # 除法
+        for t in ['+', 'MINUS', 'SEMI', 'RPAREN', 'relop']: add("Term'", t, [])
 
         add('Factor', 'ID', ['ID', '@CHECK_VAR', '@PUSH_VAL'])
         add('Factor', 'NUM', ['NUM', '@PUSH_VAL'])
@@ -231,21 +225,18 @@ class LL1Parser:
         while self.stack:
             top = self.stack.pop()
             cur = self.peek()
-
             if top.startswith('@'):
                 self.execute_action(top)
                 continue
-
             if top == '#':
                 if cur.type == '#': return
-                raise Exception("语法分析错误：期待结束符")
-
+                raise Exception("语法分析错误")
             if top not in self.nonterminals:
                 if top == cur.type:
                     self.last_lexeme = cur.value
                     self.advance()
                 else:
-                    raise Exception(f"Line {cur.line}: 期望 {top}, 得到 {cur.type} '{cur.value}'")
+                    raise Exception(f"Line {cur.line}: 期望 {top}, 得到 {cur.type}")
             else:
                 key = (top, cur.type)
                 if key not in self.table:
@@ -254,27 +245,20 @@ class LL1Parser:
                     self.stack.append(sym)
 
     def execute_action(self, action):
-        # 1. 语义检查：变量重定义与未定义
         if action == '@DEF_VAR':
             if self.last_lexeme in self.sym_table:
                 raise RuntimeError(f"语义错误: 变量 '{self.last_lexeme}' 重复定义")
             self.sym_table.add(self.last_lexeme)
             self.data_stack.append(self.last_lexeme)
-
         elif action == '@CHECK_VAR':
             if self.last_lexeme not in self.sym_table:
                 raise RuntimeError(f"语义错误: 变量 '{self.last_lexeme}' 未定义")
-
-        # 2. 基础数据栈操作
-        elif action == '@PUSH_VAL' or action == '@PUSH_OP':
+        elif action in ['@PUSH_VAL', '@PUSH_OP']:
             self.data_stack.append(self.last_lexeme)
-
         elif action == '@ASSIGN':
             val = self.data_stack.pop();
             target = self.data_stack.pop()
             self.tac.emit(f"{target} = {val}")
-
-        # 3. 算术运算
         elif action in ['@ADD', '@SUB', '@MUL', '@DIV']:
             op = {'@ADD': '+', '@SUB': '-', '@MUL': '*', '@DIV': '/'}[action]
             r = self.data_stack.pop();
@@ -282,8 +266,6 @@ class LL1Parser:
             t = self.tac.new_temp()
             self.tac.emit(f"{t} = {l} {op} {r}")
             self.data_stack.append(t)
-
-        # 4. For 循环控制流
         elif action == '@FOR_L1':
             L1 = self.tac.new_label()
             self.tac.emit(f"{L1}:")
@@ -306,8 +288,7 @@ class LL1Parser:
         elif action == '@FOR_GOTO_L1':
             L2 = self.for_labels.pop();
             L1 = self.for_labels.pop()
-            self.tac.emit(f"goto {L1}")
-            self.tac.emit(f"{L2}:")
+            self.tac.emit(f"goto {L1}\n{L2}:")
 
 
 # ==========================================
@@ -315,30 +296,23 @@ class LL1Parser:
 # ==========================================
 
 if __name__ == "__main__":
+    # 测试代码：包含减法、乘法以及重复定义检测
     code = """
     for (int i = 0; i < 5; i++) {
-        int a = 0;
-        int a1 = 10;
-        a = a + 1;
+        int a = 10 - 2 * 3;
+        int b = a / 2;
     }
     """
 
-    # --- 词法分析展示 ---
     print("--- 1. 词法分析结果 ---")
     lexer = DFALexer(code)
-    try:
-        tokens = lexer.tokenize()
-        for t in tokens: print(t)
-    except Exception as e:
-        print(f"词法阶段失败: {e}")
-        exit()
+    tokens = lexer.tokenize()
+    for t in tokens: print(t)
 
-    # --- 语法分析与三地址码展示 ---
-    print("\n--- 2. 语法分析与三地址码生成 ---")
+    print("\n--- 2. 语法分析与三地址码 ---")
     try:
         parser = LL1Parser(tokens)
         parser.parse()
-        for line in parser.tac.code:
-            print(line)
+        for line in parser.tac.code: print(line)
     except Exception as e:
         print(f"\n[编译错误] {e}")
