@@ -102,6 +102,7 @@ class DFALexer:
             else:
                 # 错误处理：防止非法字符导致死循环
                 if self.pos < len(self.code):
+                    self.tokens.append(Token('ERROR', lexeme, self.line))
                     self.pos += 1
 
         self.tokens.append(Token('#', '#', self.line))
@@ -164,17 +165,17 @@ class LL1Parser:
             T[(A, a)] = prod
 
         # 核心文法定义
-        add('Program', 'INT', ['StmtList']);
-        add('Program', 'ID', ['StmtList']);
-        add('Program', 'FOR', ['StmtList']);
+        add('Program', 'INT', ['StmtList'])
+        add('Program', 'ID', ['StmtList'])
+        add('Program', 'FOR', ['StmtList'])
         add('Program', '#', [])
-        add('StmtList', 'INT', ['Stmt', 'StmtList']);
-        add('StmtList', 'ID', ['Stmt', 'StmtList']);
-        add('StmtList', 'FOR', ['Stmt', 'StmtList']);
-        add('StmtList', 'RBRACE', []);
+        add('StmtList', 'INT', ['Stmt', 'StmtList'])
+        add('StmtList', 'ID', ['Stmt', 'StmtList'])
+        add('StmtList', 'FOR', ['Stmt', 'StmtList'])
+        add('StmtList', 'RBRACE', [])
         add('StmtList', '#', [])
-        add('Stmt', 'INT', ['DeclStmt']);
-        add('Stmt', 'ID', ['AssignStmt']);
+        add('Stmt', 'INT', ['DeclStmt'])
+        add('Stmt', 'ID', ['AssignStmt'])
         add('Stmt', 'FOR', ['ForStmt'])
 
         add('DeclStmt', 'INT', ['INT', 'ID', '@DEF_VAR', 'DeclSuffix'])
@@ -201,15 +202,15 @@ class LL1Parser:
         add('Block', 'LBRACE', ['LBRACE', 'StmtList', 'RBRACE'])
 
         # --- 四则运算文法支持 ---
-        add('Expr', 'ID', ['Term', "Expr'"]);
-        add('Expr', 'NUM', ['Term', "Expr'"]);
+        add('Expr', 'ID', ['Term', "Expr'"])
+        add('Expr', 'NUM', ['Term', "Expr'"])
         add('Expr', 'LPAREN', ['Term', "Expr'"])
         add("Expr'", '+', ['+', 'Term', '@ADD', "Expr'"])
         add("Expr'", 'MINUS', ['MINUS', 'Term', '@SUB', "Expr'"])  # 减法
         for t in ['SEMI', 'RPAREN', 'relop']: add("Expr'", t, [])
 
-        add('Term', 'ID', ['Factor', "Term'"]);
-        add('Term', 'NUM', ['Factor', "Term'"]);
+        add('Term', 'ID', ['Factor', "Term'"])
+        add('Term', 'NUM', ['Factor', "Term'"])
         add('Term', 'LPAREN', ['Factor', "Term'"])
         add("Term'", 'MUL', ['MUL', 'Factor', '@MUL', "Term'"])  # 乘法
         add("Term'", 'DIV', ['DIV', 'Factor', '@DIV', "Term'"])  # 除法
@@ -256,12 +257,12 @@ class LL1Parser:
         elif action in ['@PUSH_VAL', '@PUSH_OP']:
             self.data_stack.append(self.last_lexeme)
         elif action == '@ASSIGN':
-            val = self.data_stack.pop();
+            val = self.data_stack.pop()
             target = self.data_stack.pop()
             self.tac.emit(f"{target} = {val}")
         elif action in ['@ADD', '@SUB', '@MUL', '@DIV']:
             op = {'@ADD': '+', '@SUB': '-', '@MUL': '*', '@DIV': '/'}[action]
-            r = self.data_stack.pop();
+            r = self.data_stack.pop()
             l = self.data_stack.pop()
             t = self.tac.new_temp()
             self.tac.emit(f"{t} = {l} {op} {r}")
@@ -271,8 +272,8 @@ class LL1Parser:
             self.tac.emit(f"{L1}:")
             self.for_labels.append(L1)
         elif action == '@REL_GEN':
-            r = self.data_stack.pop();
-            op = self.data_stack.pop();
+            r = self.data_stack.pop()
+            op = self.data_stack.pop()
             l = self.data_stack.pop()
             t = self.tac.new_temp()
             self.tac.emit(f"{t} = {l} {op} {r}")
@@ -286,7 +287,7 @@ class LL1Parser:
             target = self.data_stack.pop()
             self.tac.emit(f"{target} = {target} + 1")
         elif action == '@FOR_GOTO_L1':
-            L2 = self.for_labels.pop();
+            L2 = self.for_labels.pop()
             L1 = self.for_labels.pop()
             self.tac.emit(f"goto {L1}\n{L2}:")
 
@@ -300,6 +301,7 @@ if __name__ == "__main__":
     code = """
     for (int i = 0; i < 5; i++) {
         int a = 10 - 2 * 3;
+        a = a + 1;
         int b = a / 2;
     }
     """
