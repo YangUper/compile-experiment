@@ -150,7 +150,7 @@ class LL1Parser:
             'ForStmt', 'Init', 'Cond', 'Iter', 'IterSuffix',
             'Block', 'StmtList', 'Stmt',
             'DeclStmt', 'DeclSuffix', 'AssignStmt',
-            'Expr', "Expr'", 'Term', "Term'", 'Factor', 'TYPE'
+            'Expr', "Expr'", 'Term', "Term'", 'Factor', 'TYPE', 'Program'
         }
 
         self.table = self.build_table()
@@ -328,12 +328,10 @@ class LL1Parser:
 
 if __name__ == "__main__":
     code = """
-    int ddd;
     for (int i = 0; i <= 5; i++) {
-        int a = (10 - 2) * 3;
-        a = a + 1;
+        int a = 3;
         int b = a / 2;
-        float c = 1.1;
+        float c = 1.2;
     }
     """
 
