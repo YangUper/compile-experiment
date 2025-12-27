@@ -3,7 +3,7 @@ from typing import List, Set
 
 
 # ==========================================
-# 1. 词法分析（DFA）- 已修复减法死循环
+# 1. 词法分析（DFA）- 保持不变
 # ==========================================
 
 @dataclass
@@ -27,11 +27,11 @@ def char_type(ch):
 DFA = {
     0: {
         'LETTER': 1, 'DIGIT': 2,
-        '+': 3, '-': 'MINUS', '*': 'MUL', '/': 'DIV',  # 修复：直接定义减乘除为终结态
+        '+': 3, '-': 'MINUS', '*': 'MUL', '/': 'DIV',
         '=': 5, '<': 6, '>': 6, '!': 6,
         ';': 'SEMI', '(': 'LPAREN', ')': 'RPAREN',
         '{': 'LBRACE', '}': 'RBRACE',
-        'SPACE': 0
+        'SPACE': 0, "&": 'AND'
     },
     1: {'LETTER': 1, 'DIGIT': 1},  # ID
     2: {'DIGIT': 2, 'DOT': 7, 'LETTER': 99},  # NUM
@@ -55,7 +55,6 @@ class DFALexer:
 
     def tokenize(self):
         while self.pos < len(self.code):
-            # 跳过空白符
             while self.pos < len(self.code) and self.code[self.pos].isspace():
                 if self.code[self.pos] == '\n': self.line += 1
                 self.pos += 1
@@ -73,11 +72,10 @@ class DFALexer:
 
                 nxt = DFA[state][ctype]
 
-                # 处理单字符终结符（如减号、乘号）
                 if isinstance(nxt, str):
                     self.tokens.append(Token(nxt, ch, self.line))
                     self.pos += 1
-                    state = -1  # 标记已处理
+                    state = -1
                     break
 
                 state = nxt
@@ -86,7 +84,6 @@ class DFALexer:
 
             if state == -1: continue
 
-            # 处理多字符 Token
             if state == 1:
                 self.tokens.append(Token(self.KEYWORDS.get(lexeme, 'ID'), lexeme, self.line))
             elif state == 2:
@@ -100,7 +97,6 @@ class DFALexer:
             elif state == 6:
                 self.tokens.append(Token('relop', lexeme, self.line))
             else:
-                # 错误处理：防止非法字符导致死循环
                 if self.pos < len(self.code):
                     self.tokens.append(Token('ERROR', lexeme, self.line))
                     self.pos += 1
@@ -132,7 +128,7 @@ class TACGenerator:
 
 
 # ==========================================
-# 3. 语法分析（LL(1) + 四则运算）
+# 3. 语法分析（已修改 For 循环逻辑）
 # ==========================================
 
 class LL1Parser:
@@ -146,11 +142,16 @@ class LL1Parser:
         self.for_labels = []
         self.last_lexeme = ""
 
+        # [NEW] 用于暂存 Iter 代码的栈（支持嵌套循环）
+        self.iter_code_buffer_stack = []
+        # [NEW] 用于记录 Iter 代码开始位置的栈
+        self.iter_start_index_stack = []
+
         self.nonterminals = {
             'ForStmt', 'Init', 'Cond', 'Iter', 'IterSuffix',
             'Block', 'StmtList', 'Stmt',
             'DeclStmt', 'DeclSuffix', 'AssignStmt',
-            'Expr', "Expr'", 'Term', "Term'", 'Factor', 'TYPE', 'Program'
+            'Expr', "Expr'", 'Term', "Term'", 'Factor', 'TYPE', 'Program', 'AND'
         }
 
         self.table = self.build_table()
@@ -163,6 +164,7 @@ class LL1Parser:
 
     def build_table(self):
         T = {}
+
         def add(A, a, prod):
             T[(A, a)] = prod
 
@@ -193,11 +195,15 @@ class LL1Parser:
         # Assign
         add('AssignStmt', 'ID', ['ID', '@CHECK_VAR', '@PUSH_VAL', '=', 'Expr', '@ASSIGN', 'SEMI'])
 
-        # For
+        # ==================== [MODIFIED] For 循环产生式 ====================
+        # 在 Iter 前后增加了 @START_ITER 和 @END_ITER
+        # 逻辑：Init -> Label1 -> Cond -> If -> 记录位置 -> Iter -> 剪切代码 -> Block -> 粘贴代码 -> Goto Label1
         add('ForStmt', 'FOR',
             ['FOR', 'LPAREN', 'Init', 'SEMI',
              '@FOR_L1', 'Cond', '@FOR_IF', 'SEMI',
-             'Iter', 'RPAREN', 'Block', '@FOR_GOTO_L1'])
+             '@START_ITER', 'Iter', '@END_ITER',  # <--- 修改点
+             'RPAREN', 'Block', '@FOR_GOTO_L1'])
+        # =================================================================
 
         # Init
         for t in ['INT', 'FLOAT', 'DOUBLE']:
@@ -312,6 +318,22 @@ class LL1Parser:
             self.tac.emit(f"if {cond} == 0 goto {L2}")
             self.for_labels.append(L2)
 
+        # ==================== [NEW] 处理 Iter 代码延迟 ====================
+        elif a == '@START_ITER':
+            # 记录当前代码生成到了哪里（准备开始解析 i++）
+            self.iter_start_index_stack.append(len(self.tac.code))
+
+        elif a == '@END_ITER':
+            # 解析完 i++ 后，计算出刚刚生成的代码范围
+            start_idx = self.iter_start_index_stack.pop()
+            # 剪切出这段代码（例如 "i = i + 1"）
+            iter_code_fragment = self.tac.code[start_idx:]
+            # 从主列表中删除它们
+            del self.tac.code[start_idx:]
+            # 暂存到缓冲区
+            self.iter_code_buffer_stack.append(iter_code_fragment)
+        # =================================================================
+
         elif a == '@INC':
             v = self.data_stack.pop()
             self.tac.emit(f"{v} = {v} + 1")
@@ -319,7 +341,13 @@ class LL1Parser:
         elif a == '@FOR_GOTO_L1':
             L2 = self.for_labels.pop()
             L1 = self.for_labels.pop()
-            self.tac.emit(f"goto {L1}\n{L2}:")
+
+            # [MODIFIED] 在跳转回 L1 之前，把暂存的 Iter 代码放回去
+            iter_code = self.iter_code_buffer_stack.pop()
+            self.tac.code.extend(iter_code)
+
+            self.tac.emit(f"goto {L1}")
+            self.tac.emit(f"{L2}:")
 
 
 # ==========================================
@@ -328,10 +356,10 @@ class LL1Parser:
 
 if __name__ == "__main__":
     code = """
-    for (int i = 0; i <= 5; i++) {
-        int a = 3;
-        int b = a / 2;
-        float c = 1.2;
+    for (int i = 0; i < 2; i++) {
+        int a = 0;
+        a = 1 * 2;
+        int b = 1;
     }
     """
 
@@ -346,5 +374,5 @@ if __name__ == "__main__":
     parser.parse()
 
     print("=== 三地址码 ===")
-    for line in parser.tac.code:
-        print(line)
+    for i, line in enumerate(parser.tac.code):
+        print(f"({i + 1}) {line}")

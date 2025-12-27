@@ -115,12 +115,7 @@ class DFALexer:
 
 
 if __name__ == "__main__":
-    code = """
-        int 1i = 0;
-        for (i = 0; i < 10; i++) {
-            i = i * 1;
-        }
-        """
+    code = "int 2i = 0; float 3.14x = 10; @ 5.5"
 
     lexer = DFALexer(code)
     tokens, errors = lexer.tokenize()

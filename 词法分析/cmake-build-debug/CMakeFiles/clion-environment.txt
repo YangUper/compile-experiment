@@ -1,5 +1,5 @@
-ToolSet: 13.0 w64 (local)@E:\MinGW\mingw64
-Ninja: 1.12.0@E:\jetbrain\CLion 2024.1.6\bin\ninja\win\x64\ninja.exe
+ToolSet: 3.5.4 (local)@C:\cygwin64
+Ninja: null@E:\jetbrain\CLion 2024.1.6\bin\ninja\cygwin\x64\ninja.exe
 Options: 
 
 Options:
